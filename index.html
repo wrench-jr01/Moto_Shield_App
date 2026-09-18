@@ -38,12 +38,11 @@
       margin-bottom: 20px;
     }
 
-    /* Badges de estado */
     .status-card {
       background: #f2f2f7;
       border-radius: 16px;
       padding: 16px;
-      margin-bottom: 24px;
+      margin-bottom: 20px;
       display: flex;
       flex-direction: column;
       gap: 10px;
@@ -79,7 +78,44 @@
       background-color: currentColor;
     }
 
-    /* Botones estilo iOS */
+    /* Campo de PIN */
+    .pin-wrap {
+      margin-bottom: 16px;
+      text-align: left;
+    }
+    .pin-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #6e6e73;
+      margin-bottom: 6px;
+      display: block;
+    }
+    .pin-input {
+      width: 100%;
+      padding: 14px;
+      border-radius: 12px;
+      border: 1.5px solid #d2d2d7;
+      font-size: 20px;
+      letter-spacing: 6px;
+      text-align: center;
+      font-weight: 700;
+    }
+    .pin-input:focus {
+      outline: none;
+      border-color: #007aff;
+    }
+
+    /* Mensaje de respuesta del receptor */
+    .msg {
+      font-size: 13px;
+      font-weight: 600;
+      min-height: 18px;
+      margin-bottom: 14px;
+    }
+    .msg.ok { color: #34c759; }
+    .msg.error { color: #ff3b30; }
+    .msg.info { color: #6e6e73; }
+
     .btn {
       width: 100%;
       padding: 16px;
@@ -92,29 +128,28 @@
       margin-bottom: 12px;
     }
 
-    .btn:active {
-      transform: scale(0.98);
-      opacity: 0.9;
-    }
+    .btn:active { transform: scale(0.98); opacity: 0.9; }
 
     .btn-connect {
       background-color: #007aff;
       color: #ffffff;
       box-shadow: 0 4px 12px rgba(0, 122, 255, 0.25);
     }
-
+    .btn-unlock {
+      background-color: #ff3b30;
+      color: #ffffff;
+      box-shadow: 0 4px 12px rgba(255, 59, 48, 0.2);
+    }
     .btn-valet-on {
       background-color: #ff9500;
       color: #ffffff;
       box-shadow: 0 4px 12px rgba(255, 149, 0, 0.2);
     }
-
     .btn-valet-off {
       background-color: #34c759;
       color: #ffffff;
       box-shadow: 0 4px 12px rgba(52, 199, 89, 0.2);
     }
-
     .btn:disabled {
       background-color: #e5e5ea;
       color: #aeaeb2;
@@ -126,10 +161,8 @@
 <body>
 
   <div class="container">
-    <!-- Logo -->
     <img src="logo.jpg" alt="Moto Shield MDQ" class="logo">
 
-    <!-- Indicadores de Estado -->
     <div class="status-card">
       <div class="status-item">
         <span>Conexión:</span>
@@ -145,29 +178,55 @@
       </div>
     </div>
 
-    <!-- Acciones -->
     <button id="connectBtn" class="btn btn-connect">Conectar a la Moto</button>
+
+    <div class="pin-wrap">
+      <label class="pin-label" for="pinInput">PIN de seguridad (4 dígitos)</label>
+      <input id="pinInput" class="pin-input" type="tel" inputmode="numeric" maxlength="4" placeholder="••••" disabled>
+    </div>
+
+    <div id="msg" class="msg info"></div>
+
+    <button id="unlockBtn" class="btn btn-unlock" disabled>🔓 Desbloqueo de Emergencia</button>
     <button id="valetOnBtn" class="btn btn-valet-on" disabled>Activar Modo Valet</button>
     <button id="valetOffBtn" class="btn btn-valet-off" disabled>Desactivar Modo Valet</button>
   </div>
 
   <script>
-    const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
-    const CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+    // Estas dos constantes tienen que coincidir EXACTO con el
+    // firmware del receptor (EMERGENCIA_SERVICE_UUID / EMERGENCIA_CHAR_UUID).
+    const SERVICE_UUID = "8f8fd6c1-9f42-4a1e-b789-1122334455aa";
+    const CHARACTERISTIC_UUID = "8f8fd6c2-9f42-4a1e-b789-1122334455aa";
+    const NOMBRE_DISPOSITIVO = "MOTO_SHIELD_MDQ";
 
     let caracteristicaGATT = null;
     let bluetoothDevice = null;
 
     const connectBtn = document.getElementById('connectBtn');
+    const unlockBtn = document.getElementById('unlockBtn');
     const valetOnBtn = document.getElementById('valetOnBtn');
     const valetOffBtn = document.getElementById('valetOffBtn');
     const bleStatus = document.getElementById('bleStatus');
     const valetStatus = document.getElementById('valetStatus');
+    const pinInput = document.getElementById('pinInput');
+    const msg = document.getElementById('msg');
+
+    // Solo permitir números en el campo de PIN
+    pinInput.addEventListener('input', () => {
+      pinInput.value = pinInput.value.replace(/\D/g, '').slice(0, 4);
+    });
+
+    function mostrarMensaje(texto, tipo) {
+      msg.textContent = texto;
+      msg.className = 'msg ' + tipo;
+    }
 
     connectBtn.addEventListener('click', async () => {
       try {
+        mostrarMensaje('Buscando la moto...', 'info');
+
         bluetoothDevice = await navigator.bluetooth.requestDevice({
-          filters: [{ name: 'MOTO_SHIELD_MDQ' }],
+          filters: [{ name: NOMBRE_DISPOSITIVO }],
           optionalServices: [SERVICE_UUID]
         });
 
@@ -177,31 +236,66 @@
         const service = await server.getPrimaryService(SERVICE_UUID);
         caracteristicaGATT = await service.getCharacteristic(CHARACTERISTIC_UUID);
 
+        // Escuchar las respuestas que manda el receptor (notify)
+        await caracteristicaGATT.startNotifications();
+        caracteristicaGATT.addEventListener('characteristicvaluechanged', manejarRespuesta);
+
         actualizarEstadoConexion(true);
+        mostrarMensaje('Conectado. Ingresá tu PIN.', 'ok');
       } catch (error) {
         console.error(error);
+        mostrarMensaje('No se pudo conectar. ¿Está cerca la moto?', 'error');
       }
     });
+
+    function manejarRespuesta(event) {
+      const decoder = new TextDecoder('utf-8');
+      const respuesta = decoder.decode(event.target.value);
+      console.log('Respuesta del receptor:', respuesta);
+
+      switch (respuesta) {
+        case 'OK_UNLOCK':
+          mostrarMensaje('✅ Desbloqueado. Ya podés arrancar.', 'ok');
+          break;
+        case 'OK_VALET_ON':
+          valetStatus.className = 'status-badge status-valet-on';
+          valetStatus.textContent = 'Activo';
+          mostrarMensaje('✅ Modo Valet activado.', 'ok');
+          break;
+        case 'OK_VALET_OFF':
+          valetStatus.className = 'status-badge status-valet-off';
+          valetStatus.textContent = 'Inactivo';
+          mostrarMensaje('✅ Modo Valet desactivado.', 'ok');
+          break;
+        case 'PIN_INCORRECTO':
+          mostrarMensaje('❌ PIN incorrecto. Probá de nuevo.', 'error');
+          break;
+        default:
+          mostrarMensaje('❌ Error: ' + respuesta, 'error');
+      }
+    }
 
     async function enviarComando(comando) {
       if (!caracteristicaGATT) return;
 
-      try {
-        const encoder = new TextEncoder();
-        await caracteristicaGATT.writeValue(encoder.encode(comando));
+      const pin = pinInput.value;
+      if (pin.length !== 4) {
+        mostrarMensaje('Ingresá el PIN de 4 dígitos.', 'error');
+        return;
+      }
 
-        if (comando === 'VALET_ON') {
-          valetStatus.className = "status-badge status-valet-on";
-          valetStatus.textContent = "Activo";
-        } else if (comando === 'VALET_OFF') {
-          valetStatus.className = "status-badge status-valet-off";
-          valetStatus.textContent = "Inactivo";
-        }
+      try {
+        mostrarMensaje('Enviando...', 'info');
+        const encoder = new TextEncoder();
+        await caracteristicaGATT.writeValue(encoder.encode(comando + ':' + pin));
+        // La respuesta real llega por notificación (manejarRespuesta)
       } catch (error) {
-        console.error("Error al enviar comando:", error);
+        console.error('Error al enviar comando:', error);
+        mostrarMensaje('Error al enviar el comando.', 'error');
       }
     }
 
+    unlockBtn.addEventListener('click', () => enviarComando('UNLOCK'));
     valetOnBtn.addEventListener('click', () => enviarComando('VALET_ON'));
     valetOffBtn.addEventListener('click', () => enviarComando('VALET_OFF'));
 
@@ -211,6 +305,8 @@
         bleStatus.innerHTML = '<span class="dot"></span> Conectado';
         connectBtn.textContent = "Conectado";
         connectBtn.disabled = true;
+        pinInput.disabled = false;
+        unlockBtn.disabled = false;
         valetOnBtn.disabled = false;
         valetOffBtn.disabled = false;
       } else {
@@ -218,10 +314,14 @@
         bleStatus.innerHTML = '<span class="dot"></span> Desconectado';
         connectBtn.textContent = "Conectar a la Moto";
         connectBtn.disabled = false;
+        pinInput.disabled = true;
+        pinInput.value = '';
+        unlockBtn.disabled = true;
         valetOnBtn.disabled = true;
         valetOffBtn.disabled = true;
         valetStatus.className = "status-badge status-valet-off";
         valetStatus.textContent = "Inactivo";
+        mostrarMensaje('', 'info');
       }
     }
 
