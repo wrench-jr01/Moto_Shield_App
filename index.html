@@ -2,57 +2,231 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MOTO SHIELD MDQ</title>
   <style>
-    body { font-family: sans-serif; text-align: center; background: #121212; color: #fff; padding: 20px; }
-    button { padding: 15px 25px; font-size: 18px; margin: 10px; border-radius: 8px; border: none; cursor: pointer; }
-    .btn-on { background-color: #ff9800; color: #fff; }
-    .btn-off { background-color: #4caf50; color: #fff; }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    body {
+      background-color: #f5f5f7;
+      color: #1d1d1f;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      background: #ffffff;
+      width: 100%;
+      max-width: 380px;
+      border-radius: 24px;
+      padding: 32px 24px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+      text-align: center;
+    }
+
+    .logo {
+      width: 140px;
+      height: auto;
+      margin-bottom: 20px;
+    }
+
+    /* Badges de estado */
+    .status-card {
+      background: #f2f2f7;
+      border-radius: 16px;
+      padding: 16px;
+      margin-bottom: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .status-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .status-badge {
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .status-disconnected { background: #ffe5e5; color: #ff3b30; }
+    .status-connected { background: #e3f9e5; color: #34c759; }
+    .status-valet-off { background: #e5e5ea; color: #8e8e93; }
+    .status-valet-on { background: #fff3cd; color: #ff9500; }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background-color: currentColor;
+    }
+
+    /* Botones estilo iOS */
+    .btn {
+      width: 100%;
+      padding: 16px;
+      border-radius: 14px;
+      border: none;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      margin-bottom: 12px;
+    }
+
+    .btn:active {
+      transform: scale(0.98);
+      opacity: 0.9;
+    }
+
+    .btn-connect {
+      background-color: #007aff;
+      color: #ffffff;
+      box-shadow: 0 4px 12px rgba(0, 122, 255, 0.25);
+    }
+
+    .btn-valet-on {
+      background-color: #ff9500;
+      color: #ffffff;
+      box-shadow: 0 4px 12px rgba(255, 149, 0, 0.2);
+    }
+
+    .btn-valet-off {
+      background-color: #34c759;
+      color: #ffffff;
+      box-shadow: 0 4px 12px rgba(52, 199, 89, 0.2);
+    }
+
+    .btn:disabled {
+      background-color: #e5e5ea;
+      color: #aeaeb2;
+      box-shadow: none;
+      cursor: not-allowed;
+    }
   </style>
 </head>
 <body>
 
-  <h1>MOTO SHIELD MDQ</h1>
-  <button id="connectBtn" style="background:#2196f3; color:#fff;">Conectar a Moto</button>
-  <hr>
-  <button class="btn-on" onclick="enviarComando('VALET_ON')">Activar Modo Valet</button>
-  <button class="btn-off" onclick="enviarComando('VALET_OFF')">Desactivar Modo Valet</button>
+  <div class="container">
+    <!-- Logo -->
+    <img src="logo.jpg" alt="Moto Shield MDQ" class="logo">
+
+    <!-- Indicadores de Estado -->
+    <div class="status-card">
+      <div class="status-item">
+        <span>Conexión:</span>
+        <span id="bleStatus" class="status-badge status-disconnected">
+          <span class="dot"></span> Desconectado
+        </span>
+      </div>
+      <div class="status-item">
+        <span>Modo Valet:</span>
+        <span id="valetStatus" class="status-badge status-valet-off">
+          Inactivo
+        </span>
+      </div>
+    </div>
+
+    <!-- Acciones -->
+    <button id="connectBtn" class="btn btn-connect">Conectar a la Moto</button>
+    <button id="valetOnBtn" class="btn btn-valet-on" disabled>Activar Modo Valet</button>
+    <button id="valetOffBtn" class="btn btn-valet-off" disabled>Desactivar Modo Valet</button>
+  </div>
 
   <script>
-    // Mismos UUIDs configurados en el código C++ del ESP32
     const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
     const CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
-    
-    let caracteristicaGATT = null;
 
-    document.getElementById('connectBtn').addEventListener('click', async () => {
+    let caracteristicaGATT = null;
+    let bluetoothDevice = null;
+
+    const connectBtn = document.getElementById('connectBtn');
+    const valetOnBtn = document.getElementById('valetOnBtn');
+    const valetOffBtn = document.getElementById('valetOffBtn');
+    const bleStatus = document.getElementById('bleStatus');
+    const valetStatus = document.getElementById('valetStatus');
+
+    connectBtn.addEventListener('click', async () => {
       try {
-        // Solicita buscar el dispositivo BLE cerca
-        const device = await navigator.bluetooth.requestDevice({
+        bluetoothDevice = await navigator.bluetooth.requestDevice({
           filters: [{ name: 'MOTO_SHIELD_MDQ' }],
           optionalServices: [SERVICE_UUID]
         });
 
-        const server = await device.gatt.connect();
+        bluetoothDevice.addEventListener('gattserverdisconnected', onDisconnected);
+
+        const server = await bluetoothDevice.gatt.connect();
         const service = await server.getPrimaryService(SERVICE_UUID);
         caracteristicaGATT = await service.getCharacteristic(CHARACTERISTIC_UUID);
 
-        alert("¡Conectado exitosamente con la Moto!");
+        actualizarEstadoConexion(true);
       } catch (error) {
         console.error(error);
-        alert("Error al conectar: " + error);
       }
     });
 
     async function enviarComando(comando) {
-      if (!caracteristicaGATT) {
-        alert("Primero conectate a la moto usando el botón azul.");
-        return;
+      if (!caracteristicaGATT) return;
+
+      try {
+        const encoder = new TextEncoder();
+        await caracteristicaGATT.writeValue(encoder.encode(comando));
+
+        if (comando === 'VALET_ON') {
+          valetStatus.className = "status-badge status-valet-on";
+          valetStatus.textContent = "Activo";
+        } else if (comando === 'VALET_OFF') {
+          valetStatus.className = "status-badge status-valet-off";
+          valetStatus.textContent = "Inactivo";
+        }
+      } catch (error) {
+        console.error("Error al enviar comando:", error);
       }
-      // Convierte el texto a array de bytes y lo manda por BLE
-      const encoder = new TextEncoder();
-      await caracteristicaGATT.writeValue(encoder.encode(comando));
-      alert("Comando enviado: " + comando);
+    }
+
+    valetOnBtn.addEventListener('click', () => enviarComando('VALET_ON'));
+    valetOffBtn.addEventListener('click', () => enviarComando('VALET_OFF'));
+
+    function actualizarEstadoConexion(conectado) {
+      if (conectado) {
+        bleStatus.className = "status-badge status-connected";
+        bleStatus.innerHTML = '<span class="dot"></span> Conectado';
+        connectBtn.textContent = "Conectado";
+        connectBtn.disabled = true;
+        valetOnBtn.disabled = false;
+        valetOffBtn.disabled = false;
+      } else {
+        bleStatus.className = "status-badge status-disconnected";
+        bleStatus.innerHTML = '<span class="dot"></span> Desconectado';
+        connectBtn.textContent = "Conectar a la Moto";
+        connectBtn.disabled = false;
+        valetOnBtn.disabled = true;
+        valetOffBtn.disabled = true;
+        valetStatus.className = "status-badge status-valet-off";
+        valetStatus.textContent = "Inactivo";
+      }
+    }
+
+    function onDisconnected() {
+      actualizarEstadoConexion(false);
     }
   </script>
 </body>
