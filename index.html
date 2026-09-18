@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>MOTO SHIELD MDQ</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; background: #121212; color: #fff; padding: 20px; }
+    button { padding: 15px 25px; font-size: 18px; margin: 10px; border-radius: 8px; border: none; cursor: pointer; }
+    .btn-on { background-color: #ff9800; color: #fff; }
+    .btn-off { background-color: #4caf50; color: #fff; }
+  </style>
+</head>
+<body>
+
+  <h1>MOTO SHIELD MDQ</h1>
+  <button id="connectBtn" style="background:#2196f3; color:#fff;">Conectar a Moto</button>
+  <hr>
+  <button class="btn-on" onclick="enviarComando('VALET_ON')">Activar Modo Valet</button>
+  <button class="btn-off" onclick="enviarComando('VALET_OFF')">Desactivar Modo Valet</button>
+
+  <script>
+    // Mismos UUIDs configurados en el código C++ del ESP32
+    const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+    const CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+    
+    let caracteristicaGATT = null;
+
+    document.getElementById('connectBtn').addEventListener('click', async () => {
+      try {
+        // Solicita buscar el dispositivo BLE cerca
+        const device = await navigator.bluetooth.requestDevice({
+          filters: [{ name: 'MOTO_SHIELD_MDQ' }],
+          optionalServices: [SERVICE_UUID]
+        });
+
+        const server = await device.gatt.connect();
+        const service = await server.getPrimaryService(SERVICE_UUID);
+        caracteristicaGATT = await service.getCharacteristic(CHARACTERISTIC_UUID);
+
+        alert("¡Conectado exitosamente con la Moto!");
+      } catch (error) {
+        console.error(error);
+        alert("Error al conectar: " + error);
+      }
+    });
+
+    async function enviarComando(comando) {
+      if (!caracteristicaGATT) {
+        alert("Primero conectate a la moto usando el botón azul.");
+        return;
+      }
+      // Convierte el texto a array de bytes y lo manda por BLE
+      const encoder = new TextEncoder();
+      await caracteristicaGATT.writeValue(encoder.encode(comando));
+      alert("Comando enviado: " + comando);
+    }
+  </script>
+</body>
+</html>
